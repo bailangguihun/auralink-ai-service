@@ -1,0 +1,70 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+config.yaml
+config.local.yaml
+secrets.yaml
+*.pem
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+.DS_Store
+
+# Databases and logs
+*.db
+*.sqlite
+*.sqlite3
+*.log
+logs/
+
+# Generated media
+*.wav
+*.mp3
+*.flac
+*.ogg
+outputs/
+generated/
+temp_uploads/
+uploads/
+
+# Models and checkpoints
+models/
+checkpoints/
+checkpoint-*/
+clap_models/
+*.pth
+*.pt
+*.ckpt
+*.pb
+*.safetensors
+*.bin
+*.onnx
+
+# Dataset and cache
+cache/
+.cache/
+cache_dataset/
+datasets/
+data/raw/
+evaluation_results/
+
+# Build and packaging
+build/
+dist/
+*.egg-info/
+
+# Third-party local source copy
+musicgen-service/audiocraft/

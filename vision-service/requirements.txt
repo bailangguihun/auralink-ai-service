@@ -1,0 +1,11 @@
+# Vision service dependencies
+#
+# Install PyTorch separately according to the target CUDA version.
+# Install flash-attn separately only when its CUDA/PyTorch versions match.
+
+Flask
+flask-cors
+Pillow==10.2.0
+scipy
+transformers
+qwen-vl-utils

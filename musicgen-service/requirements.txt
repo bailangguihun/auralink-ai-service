@@ -1,0 +1,43 @@
+# Web API框架
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+
+# 数据库和数据处理
+pydantic==2.5.0
+pyyaml==6.0.1
+
+# AudioCraft相关依赖
+torch==2.1.0
+torchaudio>=2.0.0,<2.1.2
+torchvision==0.16.0
+torchtext==0.16.0
+
+# AudioCraft核心依赖
+av==11.0.0
+einops
+flashy>=0.0.1
+hydra-core>=1.1
+hydra_colorlog
+julius
+num2words
+numpy<2.0.0
+sentencepiece
+spacy==3.7.6
+huggingface_hub
+tqdm
+transformers>=4.31.0
+xformers<0.0.23
+demucs
+librosa
+soundfile
+torchmetrics
+encodec
+protobuf
+torchdiffeq
+
+# 音频处理
+pesq
+pystoi
+
+# 工具库
+logging
