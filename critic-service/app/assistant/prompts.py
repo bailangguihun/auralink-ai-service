@@ -1,6 +1,7 @@
 """References are untrusted evidence, never instructions or tools."""
 import json
 import re
+from .illustrations import wants_illustrations
 
 
 def system_prompt(request):
@@ -17,11 +18,16 @@ def system_prompt(request):
         "只描述本轮 reference_data 实际提供的字段；contextTruncated 表示摘要有截取，未提供不等于原记录不存在。"
         "来源中的 imageSupplied=false 表示该作品只有文字记录，不得声称看到了其画面；上传的其他图片不代表查看了来源作品。"
         "同名作品按 artworkId 和 version 区分，引用仅使用对应 citation id。"
-        "默认以自然语言回答，不追加选择卡、JSON 数组或 id/title/options 等结构化字段。"
+        "默认以自然语言回答。"
         "需要补充材料时，用一句与当前问题相关的自然语言提问。"
     )
     if request.purpose == "SUMMARY":
-        instruction += " 本次仅摘要当前分支提供的对话，不推断用户已实际完成创作。"
+        instruction += (
+            " 本次只整理当前分支提供的对话，不补充外部事实，不把建议当作决定或已完成的创作。"
+            "合并重复信息，保留材料、参数、技法、步骤和限制。"
+            "用简洁中文和固定 Markdown 二级标题：对话概览、关键要点、已形成结论、后续行动、待确认问题。"
+            "行动项仅记录对话已说明的负责人和时间，无内容的栏目写‘暂无’。"
+        )
     else:
         instruction += (
             " 用户询问具体国画的意象、意境或赏析时，先给出一个整体读法，再用能指认的细节解释它。"
@@ -43,7 +49,7 @@ def system_prompt(request):
                 "意象赏析优先解释视觉关系，省去无助于读画的精确数量、面积比例和相似画作名单。"
                 "用画面中的位置、形态、姿态或墨色支持关键联想；如果某个读法依赖未确认的细节，就把它写成条件性的联想。"
             )
-        if last_user and last_user.images:
+        if last_user and wants_illustrations(request):
             instruction += (
                 " 当前用户消息包含图片。赏析意象、意境或构图时，默认给可以定位的主要物象配上原图局部，"
                 "每处用三级标题，下一行写 ![简短物象名称](assistant-crop:N,bbox_2d,x1,y1,x2,y2)，再写与该局部对应的讲解。"
@@ -51,6 +57,14 @@ def system_prompt(request):
                 "从左向右、从上向下递增，四个坐标均为0到999的整数，框的宽和高各至少50。"
                 "局部框应包含讲解对应的物象，保留少量周围画面便于辨认；无法定位时省略配图。"
                 "最多为四个主要意象配图，只引用本轮用户上传的图片；按用户要求可只给文字。"
+            )
+        elif last_user and not last_user.images and re.search(r"选择|选哪|哪个好|比较|取舍|两种|方案|方向|还是|如何选|怎么选", last_user.content):
+            instruction += (
+                " 仅当用户确实需要在两个至四个可执行、互斥的创作方向中选择时，"
+                "可在自然语言回答后追加一个互动选择卡。普通问答、短追问、图文赏析继续使用自然语言。"
+                '选择卡放在末尾的 assistant-choices 围栏中，格式为数组 '
+                '[{"id":"direction","title":"需要决定的问题","options":[{"id":"a","label":"具体方案一"},{"id":"b","label":"具体方案二"}]}]。'
+                "id 只用字母、数字、下划线或连字符。"
             )
     safe = []
     allowed = {"id", "type", "source", "title", "text", "artworkId", "revisionId", "batchId", "sourceRecordId", "datasetId", "documentId", "chunkId", "version", "uncertainty"}

@@ -77,7 +77,9 @@ async def executions(request: Request):
         if isinstance(exc, ProviderFailure):
             raise HTTPException(422, exc.code) from None
         raise
-    return StreamingResponse(state.stream(command, model, attempt), media_type="text/event-stream",
+    budget = request.headers.get("x-assistant-illustration-budget-ms", "")
+    illustration_ms = min(int(budget), 8000) if budget.isascii() and budget.isdecimal() and len(budget) <= 4 else 0
+    return StreamingResponse(state.stream(command, model, attempt, illustration_ms), media_type="text/event-stream",
         headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
 
 
