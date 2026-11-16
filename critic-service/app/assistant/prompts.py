@@ -49,7 +49,7 @@ def system_prompt(request):
                 "意象赏析优先解释视觉关系，省去无助于读画的精确数量、面积比例和相似画作名单。"
                 "用画面中的位置、形态、姿态或墨色支持关键联想；如果某个读法依赖未确认的细节，就把它写成条件性的联想。"
             )
-        if wants_illustrations(request):
+        if last_user and wants_illustrations(request):
             instruction += (
                 " 当前用户消息包含图片。赏析意象、意境或构图时，默认给可以定位的主要物象配上原图局部，"
                 "每处用三级标题，下一行写 ![简短物象名称](assistant-crop:N,bbox_2d,x1,y1,x2,y2)，再写与该局部对应的讲解。"
