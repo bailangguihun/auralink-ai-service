@@ -63,6 +63,60 @@ def frames(text="山水", done=True):
     return chunks
 
 
+@pytest.mark.parametrize(("budget", "question", "first_crop", "boxes", "expected_requests", "expect_crop"), [
+    (2000, "画面意象", "", '[{"section":1,"image":1,"box":[100,200,500,700]}]', 2, True),
+    (2000, "画面意象", "", '[{"section":1,"image":2,"box":[100,200,500,700]}]', 2, False),
+    (2000, "画面意象", "", None, 2, False),
+    (2000, "请纯文字分析画面", "", "[]", 1, False),
+    (0, "画面意象", "", "[]", 1, False),
+    (2000, "画面意象", "\n![山峰](assistant-crop:1,bbox_2d,100,200,500,700)", "[]", 1, False),
+])
+def test_illustration_fallback_preserves_primary_stream(monkeypatch, budget, question, first_crop, boxes,
+                                                       expected_requests, expect_crop):
+    settings = Settings.model_validate({
+        "mode": "enabled", "models": [{"id": "vision", "provider": "fixture", "model": "qwen3-vl-plus",
+            "baseUrl": "https://fixture.example/v1", "keyFile": "unused-in-memory",
+            "capabilities": {"images": True}}],
+        "limits": {"chatMs": 6000, "idleMs": 2000},
+    })
+    monkeypatch.setattr("app.assistant.execution.load_configuration",
+        lambda: (settings, "a" * 64, {"vision": "fixture-key"}, "fixture-token", "READY"))
+    state = Runtime()
+    seen = []
+    original = "## 主要意象\n\n### 山峰" + first_crop + "\n山峰引导视线向上。"
+
+    def handler(request):
+        seen.append(json.loads(request.content))
+        if len(seen) == 2 and boxes is None:
+            return httpx.Response(503)
+        payload = frames(original if len(seen) == 1 else boxes)
+        payload.insert(-1, b'data: {"choices":[],"usage":{"total_tokens":42}}\n\n')
+        return httpx.Response(200, headers={"content-type": "text/event-stream"}, stream=Bytes(payload))
+
+    image = {"mimeType": "image/png", "dataBase64": "AA=="}
+    req = command(state, modelKey="vision", messages=[{"role": "user", "content": "private previous turn"},
+        {"role": "assistant", "content": "previous response"}, {"role": "user", "content": question, "images": [image]}])
+    async def execution():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as state.client:
+            return [event async for event in state.stream(req, state.model("vision"), state.admit(req), budget)]
+
+    messages = asyncio.run(execution())
+    events = [(frame.splitlines()[0][7:], json.loads(frame.splitlines()[1][6:])) for frame in messages]
+    assert len(seen) == expected_requests
+    assert "".join(data["text"] for name, data in events if name == "delta") == original
+    assert events[-1][0] == "done"
+    result = events[-1][1]
+    assert ("illustratedAnswer" in result) == expect_crop
+    if expect_crop:
+        assert result["illustratedAnswer"] == original.replace("### 山峰", "### 山峰\n![山峰](assistant-crop:1,bbox_2d,100,200,500,700)")
+    if expected_requests == 2:
+        assert len(seen[1]["messages"]) == 2
+        assert "private previous turn" not in json.dumps(seen[1])
+        assert seen[1]["messages"][1]["content"][1]["image_url"]["url"] == "data:image/png;base64,AA=="
+        assert events[-2][1]["illustration"] == ({"status": "UNCONFIRMED"} if boxes is None else {
+            "status": "COMPLETED", "providerReported": {"total_tokens": 42}})
+
+
 def test_disabled_or_malformed_assistant_does_not_change_critic_health(monkeypatch, tmp_path):
     app = importlib.import_module("app.main").app
     with TestClient(app) as client:

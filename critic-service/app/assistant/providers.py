@@ -39,8 +39,8 @@ def validate_images(request, model, limits):
                 raise ProviderFailure("INVALID_IMAGE") from exc
 
 
-def provider_body(request, model):
-    messages = [{"role": "system", "content": system_prompt(request)}]
+def provider_body(request, model, instruction=None):
+    messages = [{"role": "system", "content": instruction if instruction is not None else system_prompt(request)}]
     for message in request.messages:
         content = message.content
         if message.images:
@@ -87,7 +87,7 @@ async def sse_data(chunks):
     # Unterminated frames are deliberately not interpreted as terminal success.
 
 
-async def stream_provider(client, request, model, key, settings, cancelled):
+async def stream_provider(client, request, model, key, settings, cancelled, *, instruction=None):
     limit = settings.limits
     total_ms = limit.summaryMs if request.purpose == "SUMMARY" else limit.chatMs
     if request.budgets.totalMs is not None:
@@ -95,7 +95,7 @@ async def stream_provider(client, request, model, key, settings, cancelled):
     deadline = time.monotonic() + total_ms / 1000
     if cancelled.is_set():
         raise ProviderFailure("CANCELLED")
-    body = provider_body(request, model)
+    body = provider_body(request, model, instruction)
     # httpx transport retries=0, redirects/proxy env disabled. No SDK retry layer.
     response = None
     connect = asyncio.create_task(client.send(client.build_request("POST", model.baseUrl.rstrip("/") + "/chat/completions",
