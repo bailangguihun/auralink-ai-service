@@ -7,8 +7,13 @@ import httpx
 from fastapi import HTTPException
 
 from .config import load_configuration
-from .illustrations import LOCALIZATION_PROMPT, apply_illustrations, missing_illustrations, wants_illustrations
-from .prompts import parse_choices
+from .prompts import (
+    LOCALIZATION_PROMPT,
+    apply_illustrations,
+    missing_illustrations,
+    parse_choices,
+    wants_illustrations,
+)
 from .providers import ProviderFailure, stream_provider
 from .schemas import Budgets, Message
 
