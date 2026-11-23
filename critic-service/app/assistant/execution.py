@@ -7,8 +7,15 @@ import httpx
 from fastapi import HTTPException
 
 from .config import load_configuration
-from .prompts import parse_choices
+from .prompts import (
+    LOCALIZATION_PROMPT,
+    apply_illustrations,
+    missing_illustrations,
+    parse_choices,
+    wants_illustrations,
+)
 from .providers import ProviderFailure, stream_provider
+from .schemas import Budgets, Message
 
 
 class Runtime:
@@ -71,14 +78,26 @@ class Runtime:
         self.active += 1
         return self.attempts[key]
 
-    async def stream(self, request, model, attempt):
+    async def stream(self, request, model, attempt, illustration_ms=0):
         answer = []
+        limit = self.settings.limits
+        total_ms = min(limit.chatMs, request.budgets.totalMs or limit.chatMs)
+        deadline = asyncio.get_running_loop().time() + total_ms / 1000
         try:
             async for event, data in stream_provider(self.client, request, model, self.keys[model.id], self.settings, attempt["cancelled"]):
                 if event == "delta":
                     answer.append(data["text"])
                 if event == "done":
-                    cards = parse_choices("".join(answer))
+                    original = "".join(answer)
+                    remaining = int((deadline - asyncio.get_running_loop().time()) * 1000) - 1000
+                    budget = min(illustration_ms, remaining)
+                    if budget >= 1000 and data["finishReason"] == "stop" and wants_illustrations(request):
+                        revised, usage = await self.localize(request, model, attempt["cancelled"], original, budget)
+                        if usage is not None:
+                            yield self.event("usage", {"purpose": "CHAT", "illustration": usage})
+                        if revised is not None:
+                            data["illustratedAnswer"] = revised
+                    cards = parse_choices(original) if request.purpose == "CHAT" else []
                     if cards:
                         yield self.event("choices", {"cards": cards})
                     attempt["state"] = "COMPLETED"
@@ -94,6 +113,46 @@ class Runtime:
             yield self.event("error", {"code": "EXECUTION_FAILED"})
         finally:
             self.active -= 1
+
+    async def localize(self, request, model, cancelled, original, budget):
+        current = request.messages[-1]
+        if len(original.encode("utf-8")) > 23000 or not model.capabilities.images:
+            return None, None
+        answer, headings, targets = missing_illustrations(original, len(current.images))
+        if not targets:
+            return None, None
+        vision = next((candidate for candidate in self.settings.models
+            if candidate.model == "qwen3-vl-plus" and candidate.enabled
+            and candidate.capabilities.images and candidate.capabilities.streaming
+            and candidate.provider == model.provider and candidate.baseUrl == model.baseUrl
+            and self.keys.get(candidate.id) == self.keys[model.id]), model)
+        localization = request.model_copy(update={
+            "messages": [Message(role="user", content=json.dumps(targets, ensure_ascii=False), images=current.images)],
+            "budgets": Budgets(totalMs=budget, maxOutputTokens=600),
+        })
+        chunks = []
+        usage = {"status": "UNCONFIRMED"}
+        try:
+            async for event, data in stream_provider(self.client, localization, vision, self.keys[vision.id],
+                    self.settings, cancelled, instruction=LOCALIZATION_PROMPT):
+                if event == "delta":
+                    chunks.append(data["text"])
+                elif event == "usage":
+                    usage["providerReported"] = data["providerReported"]
+                elif event == "done" and data["finishReason"] == "stop":
+                    usage["status"] = "COMPLETED"
+        except ProviderFailure as exc:
+            if exc.code == "CANCELLED":
+                raise
+            return None, usage
+        if cancelled.is_set():
+            raise ProviderFailure("CANCELLED")
+        if usage["status"] != "COMPLETED":
+            return None, usage
+        revised = apply_illustrations(answer, headings, targets, "".join(chunks), len(current.images))
+        if revised is not None and len(json.dumps(revised, ensure_ascii=False).encode("utf-8")) > 60000:
+            revised = None
+        return revised, usage
 
     @staticmethod
     def event(name, data):

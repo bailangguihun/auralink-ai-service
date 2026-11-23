@@ -1,4 +1,4 @@
-"""Candidate integrity checks use only stdlib and synthetic source fixtures."""
+"""Candidate integrity checks for synthetic fixtures and the checked-out source."""
 import copy
 import hashlib
 import importlib.util
@@ -42,6 +42,9 @@ class CandidateTests(unittest.TestCase):
         self.assertEqual(27, len(verified["files"]))
         self.assertEqual(set(candidate.DEPENDENCIES), set(verified["dependency_sha256"]))
         self.assertIs(False, verified["production_approved"])
+
+    def test_checked_out_runtime_fits_assistant_candidate_inventory(self):
+        candidate.collect_source(SCRIPT.parents[1], candidate.ASSISTANT_SCHEMA)
 
     def test_v1_legacy_inventory_remains_verifiable(self):
         source = {path: b"# synthetic legacy fixture\n" for path in candidate.SOURCE_PATHS}
